@@ -210,9 +210,11 @@ async function startPanelServer(options = {}) {
 
     if (req.method === 'GET' && pathname === '/api/overview') {
       try {
-        const installs = detectCodexInstallations();
-        const envState = inspectEnvironmentState();
-        const selected = await resolveSelectedProxy(projectRoot, envState);
+        const installs = options._mockInstallations || detectCodexInstallations();
+        const envState = options._mockEnvState || inspectEnvironmentState();
+        const selected = options._mockSelectedProxy !== undefined
+          ? options._mockSelectedProxy
+          : await resolveSelectedProxy(projectRoot, envState);
         const health = selected
           ? (options._mockHealth || await checkProxyHealth(selected.proxyUrl, { timeoutMs: 1500, noProxy: selected.noProxy }))
           : { configValid: false, proxyReachable: false, error: '未探测到可用本地代理' };

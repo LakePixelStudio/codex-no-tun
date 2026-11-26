@@ -402,7 +402,7 @@ function createPanelLauncher(options = {}) {
   const iconTarget = options.iconPath
     || installs.desktop?.msix?.packageExe
     || installs.desktop?.standalone
-    || '%SystemRoot%\\System32\\shell32.dll';
+    || path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'shell32.dll');
 
   const shortcutDir = options.shortcutDir ? path.resolve(options.shortcutDir) : outDir;
   const rawName = String(options.shortcutName || 'Codex 免 TUN 面板').replace(/[<>:"/\\|?*\r\n\0]/g, '').trim() || 'Codex 免 TUN 面板';

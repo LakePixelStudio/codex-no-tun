@@ -54,6 +54,17 @@ test('panel-server: HTML 注入、CSRF 令牌与 Origin 校验、三档压缩切
       configPath,
       dbPath: path.join(tempRoot, 'missing-logs.sqlite'),
       clashLogFile: path.join(tempRoot, 'missing-clash.log'),
+      _mockInstallations: {
+        desktop: { msix: { version: '26.1120.6357.0' }, standalone: null },
+        cli: { bundledCliVersion: '0.171.0', npmVersion: null }
+      },
+      _mockEnvState: {
+        tunUp: false,
+        winInet: { proxyEnable: false, proxyServer: null },
+        runningProcesses: [],
+        codexConfig: { respectSystemProxy: false }
+      },
+      _mockSelectedProxy: { proxyUrl: 'http://127.0.0.1:7897', noProxy: null, source: 'mock' },
       _mockHealth: { configValid: true, proxyReachable: true, error: null },
       _mockConfigsRes: {
         ok: true,
@@ -168,6 +179,7 @@ test('createPanelLauncher: 含中文和空格路径生成纯 ASCII 面板 VBS �
 
     const res = createPanelLauncher({
       projectRoot: dir,
+      installations: { desktop: { msix: null, standalone: null } },
       nodeExe: fakeNode,
       cliJsPath: fakeCli,
       outDir,
