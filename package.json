@@ -8,7 +8,7 @@
     "codex-notun": "./src/cli.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test",
     "check": "node ./src/cli.js check",
     "status": "node ./src/cli.js status",
     "setup": "node ./src/cli.js setup",

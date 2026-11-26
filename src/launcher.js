@@ -265,6 +265,7 @@ function createShortcutLnk({
     encoding: 'utf8',
     timeout: 15000,
     windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: Object.assign({}, process.env, {
       CODEX_LNK_PATH: path.resolve(lnkPath),
       CODEX_VBS_PATH: path.resolve(vbsPath),
