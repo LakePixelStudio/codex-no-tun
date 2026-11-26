@@ -4,7 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { DatabaseSync } = require('node:sqlite');
+let DatabaseSync = null;
+try {
+  DatabaseSync = require('node:sqlite').DatabaseSync;
+} catch {}
 const {
   analyzeCodexLogsForDisconnects,
   inspectClashStabilityReadOnly,
@@ -19,6 +22,13 @@ test('analyzeCodexLogsForDisconnects: 只读解析 10053/WS 断连/HTTP 回退�
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-10053-db-'));
   try {
     const dbPath = path.join(tempRoot, 'logs_2.sqlite');
+    if (!DatabaseSync) {
+      fs.writeFileSync(dbPath, 'stub', 'utf8');
+      const fallbackRes = analyzeCodexLogsForDisconnects({ dbPath, hours: 24 });
+      assert.equal(fallbackRes.available, false);
+      assert.match(fallbackRes.error, /node:sqlite/);
+      return;
+    }
     const db = new DatabaseSync(dbPath);
     db.exec(`
       CREATE TABLE logs (
