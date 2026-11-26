@@ -93,7 +93,8 @@ test('inspectClashStabilityReadOnly & applyRuntimeMihomoKeepAlive: 识别保活�
             '节点A': { type: 'Shadowsocks', history: [{ time: 't1', delay: 149 }] }
           }
         }
-      }
+      },
+      _mockConnectionsRes: { ok: false }
     });
 
     assert.equal(stab.pipeReachable, true);
@@ -131,7 +132,8 @@ test('buildHttpsOnlyCliArgs & diagnoseDisconnectRisk: 保留官方认证不改 b
       ok: true,
       json: { 'keep-alive-idle': 0, 'keep-alive-interval': 0, 'disable-keep-alive': false }
     },
-    _mockProxiesRes: { ok: false }
+    _mockProxiesRes: { ok: false },
+    _mockConnectionsRes: { ok: false }
   });
   assert.equal(diag.clash.keepAliveUnset, true);
   assert.equal(diag.findings.some((f) => f.includes('TCP 保活')), true);
@@ -178,6 +180,87 @@ test('applyPersistentClashKeepAlive & restorePersistentClashKeepAlive: 保留代
     assert.doesNotMatch(mergeRestored, /keep-alive-idle/);
     assert.match(mergeRestored, /user-custom-key: true/);
     assert.match(mergeRestored, /store-selected: true/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('diagnoseDisconnectRisk: 识别含大图 120s error sending request 超时与慢速上传节点', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-120s-diag-'));
+  try {
+    const dbPath = path.join(tempRoot, 'logs_2.sqlite');
+    if (DatabaseSync) {
+      const db = new DatabaseSync(dbPath);
+      db.exec(`
+        CREATE TABLE logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts INTEGER,
+          level TEXT,
+          target TEXT,
+          feedback_log_body TEXT
+        );
+      `);
+      const nowSec = 1795670000;
+      const insert = db.prepare('INSERT INTO logs (ts, level, target, feedback_log_body) VALUES (?, ?, ?, ?)');
+      insert.run(nowSec - 300, 'TRACE', 'codex_core::session::turn', 'post sampling token usage total_usage_tokens=77134 auto_compact_scope_limit=Some(120000)');
+      insert.run(nowSec - 299, 'DEBUG', 'codex_http_client::request', 'Compressed request body with zstd pre_compression_bytes=3459250 post_compression_bytes=2469738 compression_duration_ms=9');
+      insert.run(nowSec - 178, 'DEBUG', 'codex_http_client::client', 'Request failed method=POST url=https://chatgpt.com/backend-api/codex/responses error=error sending request for url (https://chatgpt.com/backend-api/codex/responses)');
+      insert.run(nowSec - 57, 'DEBUG', 'codex_http_client::client', 'Request failed method=POST url=https://chatgpt.com/backend-api/codex/responses error=error sending request for url (https://chatgpt.com/backend-api/codex/responses)');
+      insert.run(nowSec - 57, 'WARN', 'codex_core::responses_retry', 'stream disconnected - retrying sampling request (1/8 in 190ms)... sampling_error=stream disconnected before completion: error sending request');
+      insert.run(nowSec + 64, 'DEBUG', 'codex_http_client::client', 'Request failed method=POST url=https://chatgpt.com/backend-api/codex/responses error=error sending request for url (https://chatgpt.com/backend-api/codex/responses)');
+      db.close();
+
+      const nowMs = Date.parse('2026-11-26T23:06:00+08:00');
+      const diag = await diagnoseDisconnectRisk({
+        dbPath,
+        hours: 24,
+        nowSec: nowSec + 100,
+        nowMs,
+        clashLogFile: path.join(tempRoot, 'missing.log'),
+        _mockConfigsRes: {
+          ok: true,
+          json: { 'keep-alive-idle': 15, 'keep-alive-interval': 15, 'disable-keep-alive': false, tun: { enable: false } }
+        },
+        _mockProxiesRes: {
+          ok: true,
+          json: {
+            proxies: {
+              AI: { now: '节点B' },
+              '节点B': { type: 'Shadowsocks', history: [{ time: 't1', delay: 180 }] }
+            }
+          }
+        },
+        _mockConnectionsRes: {
+          ok: true,
+          json: {
+            connections: [
+              {
+                metadata: { host: 'chatgpt.com', process: 'Codex.exe' },
+                chains: ['节点B', 'AI'],
+                upload: 360 * 1024,
+                download: 3 * 1024,
+                start: '2026-11-26T23:05:48+08:00'
+              }
+            ]
+          }
+        }
+      });
+
+      assert.equal(diag.logs.countSendRequestError, 3);
+      assert.equal(diag.logs.countSendRequestRetries, 1);
+      assert.equal(diag.logs.avgSendRequestIntervalSec, 121);
+      assert.equal(diag.logs.uploadTimeout120sLikely, true);
+      assert.equal(diag.logs.likelyImageHeavyPayload, true);
+      assert.equal(diag.logs.latestTokens, 77134);
+      assert.equal(diag.logs.latestAutoCompactLimit, 120000);
+      assert.equal(diag.clash.activeCodexConnections, 1);
+      assert.equal(diag.clash.estimatedUploadKBps, 30);
+      assert.equal(diag.clash.slowUploadWarning, true);
+      assert.equal(diag.findings.some((f) => f.includes('120 秒')), true);
+      assert.equal(diag.findings.some((f) => f.includes('base64')), true);
+      assert.equal(diag.recommendations.some((r) => r.includes('/compact')), true);
+      assert.equal(diag.recommendations.some((r) => r.includes('节点B')), true);
+    }
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

@@ -19,9 +19,14 @@ description: 排查并缓解 Codex 的「正在重新连接」/「stream disconn
    - 征得用户确认后执行对应命令：
      - `codex-notun-tool.cmd compact-limit balanced`（或 `aggressive` / `relaxed` / 自定义整数 / `restore` 恢复官方默认）
    - 若用户正在使用中的单个长会话已经膨胀到 > 2 MB，也提醒在对话中发送 `/compact` 立即压缩当前会话。
-4. **Clash 15s TCP 保活与防休眠**：
+4. **识别 `error sending request`（120s 上传超时 + 含图大包 + 慢节点）**：
+   - 若诊断输出 `uploadTimeout120sLikely=true` 或 `likelyImageHeavyPayload=true`（常见于会话工具输出嵌入多张 base64 截图、zstd 压缩后仍 `> 1 MB`，而 token 数尚未达到 `model_auto_compact_token_limit`，同时节点上传速度 `< 60 KB/s` 撞上约 120 秒请求超时）：
+   - 告知用户这**不是** `os error 10053`，而是**大包上传超时**，并指导用户：
+     1. 在 Clash Verge 中切换到上传速度更快/更稳的节点；
+     2. 在当前长会话直接发送 `/compact`（或新开会话）清掉历史 base64 大图。
+5. **Clash 15s TCP 保活与防休眠**：
    - 运行 `codex-notun-tool.cmd fix-keepalive` 备份并写入 Clash Verge 的 `profiles\Merge.yaml` 与 `clash-verge.yaml` 并热重载 Mihomo（可随时用 `codex-notun-tool.cmd restore-keepalive` 还原）。
    - 或运行 `codex-notun-tool.cmd stabilize-all --compact-limit 180000` 一次性完成 Clash 保活 + 自动压缩 + `prevent_idle_sleep = true`。
    - CLI 长任务推荐使用 `codex-notun.cmd --https-only ...` 强制 HTTPS+zstd，不修改全局 `model_provider`。
-5. **安全边界**：
+6. **安全边界**：
    - 不要强行全局覆盖 `~/.codex/config.toml` 的 `model_provider`（否则会破坏桌面端已有会话归属），也不要强杀 Codex / Clash。

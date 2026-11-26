@@ -1,6 +1,6 @@
 {
   "name": "codex-no-tun",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Windows No-TUN local proxy toolkit, launcher, CLI wrapper, anti-10053 diagnostics, 3-tier auto-compact manager, and Codex plugin for OpenAI Codex Desktop and Codex CLI.",
   "license": "MIT",
   "private": false,

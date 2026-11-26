@@ -223,8 +223,14 @@ async function cmdCheck(flags) {
       count10053: disconnectSummary.logs.count10053,
       countWsClosed: disconnectSummary.logs.countWsClosed,
       countHttpFallback: disconnectSummary.logs.countHttpFallback,
+      countSendRequestError: disconnectSummary.logs.countSendRequestError,
+      countSendRequestRetries: disconnectSummary.logs.countSendRequestRetries,
+      uploadTimeout120sLikely: disconnectSummary.logs.uploadTimeout120sLikely,
       maxRequestBytes: disconnectSummary.logs.maxRequestBytes,
+      maxCompressedBytes: disconnectSummary.logs.maxCompressedBytes,
       oversizedContextRisk: disconnectSummary.logs.oversizedContextRisk,
+      likelyImageHeavyPayload: disconnectSummary.logs.likelyImageHeavyPayload,
+      estimatedUploadKBps: disconnectSummary.clash.estimatedUploadKBps,
       keepAliveIdle: disconnectSummary.clash.keepAliveIdle,
       keepAliveInterval: disconnectSummary.clash.keepAliveInterval,
       keepAliveUnset: disconnectSummary.clash.keepAliveUnset,
@@ -270,12 +276,15 @@ async function cmdCheck(flags) {
     envState.warnings.forEach((w) => console.log(`  ! ${w}`));
   }
 
-  console.log('\n--- 抗断连健康检查 (os error 10053 / WebSocket) ---');
-  console.log(`  近24h 10053/断连/HTTP回退: ${disconnectSummary.logs.count10053} / ${disconnectSummary.logs.countWsClosed} / ${disconnectSummary.logs.countHttpFallback}`);
-  console.log(`  最大单次请求体积: ${disconnectSummary.logs.maxRequestBytes ? `${(disconnectSummary.logs.maxRequestBytes / (1024 * 1024)).toFixed(2)} MB` : '暂无记录'}`);
+  console.log('\n--- 抗断连健康检查 (os error 10053 / WebSocket / 120s 上传超时) ---');
+  console.log(`  近24h 10053/WS断连/HTTP回退: ${disconnectSummary.logs.count10053} / ${disconnectSummary.logs.countWsClosed} / ${disconnectSummary.logs.countHttpFallback}`);
+  console.log(`  近24h error sending request: ${disconnectSummary.logs.countSendRequestError} 次 (重试 ${disconnectSummary.logs.countSendRequestRetries} 次${disconnectSummary.logs.uploadTimeout120sLikely ? ', 疑似 120s 上传超时' : ''})`);
+  const maxPreMb = disconnectSummary.logs.maxRequestBytes ? `${(disconnectSummary.logs.maxRequestBytes / (1024 * 1024)).toFixed(2)} MB` : '暂无记录';
+  const maxPostMb = disconnectSummary.logs.maxCompressedBytes ? ` (zstd 后 ${(disconnectSummary.logs.maxCompressedBytes / (1024 * 1024)).toFixed(2)} MB${disconnectSummary.logs.likelyImageHeavyPayload ? ', 含大图/难压缩特征' : ''})` : '';
+  console.log(`  最大单次请求体积: ${maxPreMb}${maxPostMb}`);
   console.log(`  Clash TCP 保活 (idle/interval): ${disconnectSummary.clash.keepAliveIdle ?? '未知'} / ${disconnectSummary.clash.keepAliveInterval ?? '未知'} 秒`);
   if (disconnectSummary.findings.length > 0) {
-    console.log('  提示: 检测到断连风险，可运行 `codex-notun-tool.cmd diagnose-10053` 查看根因与修复建议。');
+    console.log('  提示: 检测到断连/超时风险，可运行 `codex-notun-tool.cmd diagnose-10053` 查看根因与修复建议。');
   }
 
   return (health.configValid && health.proxyReachable) ? 0 : 1;
@@ -572,15 +581,23 @@ async function cmdDiagnose10053(flags) {
     console.log(JSON.stringify(res, null, 2));
     return 0;
   }
-  console.log('=== Codex os error 10053 / 断连专项诊断 ===');
+  console.log('=== Codex os error 10053 / 120s 上传超时专项诊断 ===');
   console.log(`统计窗口: 最近 ${res.logs.hours} 小时`);
   console.log(`logs_2.sqlite: ${res.logs.available ? '只读读取成功' : `不可用 (${res.logs.error})`}`);
   console.log(`  os error 10053 次数: ${res.logs.count10053}`);
   console.log(`  WebSocket 断开次数:  ${res.logs.countWsClosed}`);
   console.log(`  触发 HTTP 回退次数:  ${res.logs.countHttpFallback}`);
   console.log(`  平均断连间隔:        ${res.logs.avgDisconnectIntervalSec ? `${res.logs.avgDisconnectIntervalSec} 秒` : '不足以计算'}`);
+  console.log(`  error sending req:   ${res.logs.countSendRequestError} 次 (采样重试 ${res.logs.countSendRequestRetries} 次)`);
+  console.log(`  平均失败/超时间隔:   ${res.logs.avgSendRequestIntervalSec ? `${res.logs.avgSendRequestIntervalSec} 秒${res.logs.uploadTimeout120sLikely ? ' (符合 120s 上传超时特征)' : ''}` : '不足以计算'}`);
   console.log(`  最大请求体 (压缩前): ${res.logs.maxRequestBytes ? `${(res.logs.maxRequestBytes / (1024 * 1024)).toFixed(2)} MB` : '暂无'}`);
   console.log(`  最大请求体 (压缩后): ${res.logs.maxCompressedBytes ? `${(res.logs.maxCompressedBytes / (1024 * 1024)).toFixed(2)} MB` : '暂无'}`);
+  if (res.logs.largestPayloadCompressRatio !== null) {
+    console.log(`  压缩后占比/含图风险: ${Math.round(res.logs.largestPayloadCompressRatio * 100)}% (${res.logs.likelyImageHeavyPayload ? '高：疑似含 base64 图片/不可压缩大附件' : '正常文本比例'})`);
+  }
+  if (res.logs.latestTokens !== null || res.logs.latestAutoCompactLimit !== null) {
+    console.log(`  最新 Token / 阈值:   ${res.logs.latestTokens ?? '未知'} / ${res.logs.latestAutoCompactLimit ?? '官方默认'}`);
+  }
 
   console.log('\n--- Clash Mihomo 稳定性 ---');
   console.log(`  控制管道连通:        ${res.clash.pipeReachable}`);
@@ -588,6 +605,8 @@ async function cmdDiagnose10053(flags) {
   console.log(`  keep-alive-interval: ${res.clash.keepAliveInterval}`);
   console.log(`  disable-keep-alive:  ${res.clash.disableKeepAlive}`);
   console.log(`  当前节点:            ${res.clash.activeNodeName || '未知'} (${res.clash.activeNodeType || '-'})`);
+  console.log(`  活跃 Codex 连接数:   ${res.clash.activeCodexConnections ?? 0}`);
+  console.log(`  估算节点上传速度:    ${res.clash.estimatedUploadKBps !== null ? `${res.clash.estimatedUploadKBps} KB/s${res.clash.slowUploadWarning ? ' (偏慢告警)' : ''}` : '暂无大包上传样本'}`);
   console.log(`  近期日志超时告警:    ${res.clash.nodeTimeoutCount} 条`);
 
   console.log('\n--- 诊断发现 ---');

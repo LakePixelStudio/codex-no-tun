@@ -85,7 +85,7 @@ codex-notun.cmd --use-bundled-cli -- --version
 
 ### 3. 诊断与一键防断连优化
 - 双击 **[`诊断检查.cmd`](诊断检查.cmd)**：检查桌面版/CLI 安装路径、WinINet 状态、TUN 网卡状态、`respect_system_proxy` 冲突与代理健康度（支持离线运行）。
-- 双击 **[`排查10053断连.cmd`](排查10053断连.cmd)**：只读扫描 `logs_2.sqlite` 传输断开次数、最大请求体积与 Clash TCP 保活参数。
+- 双击 **[`排查10053断连.cmd`](排查10053断连.cmd)**：只读扫描 `logs_2.sqlite` 的 `os error 10053` 断连、`error sending request`（120 秒单次上传超时）、含大图/难压缩大包（zstd 压缩后 `> 1 MB` 且 token 未达自动压缩阈值）及 Clash 节点实时上传速度与保活参数，自动提示何时该切换 Clash 节点或发送 `/compact`。
 - 一键命令行命令：
   ```cmd
   codex-notun-tool.cmd check

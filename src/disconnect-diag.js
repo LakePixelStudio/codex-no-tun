@@ -13,6 +13,9 @@ const { sanitizeDiagnosticErrorText } = require('./proxy-core');
 const { inspectCodexUserConfigReadOnly } = require('./discovery');
 
 const OVERSIZED_CONTEXT_THRESHOLD_BYTES = 2 * 1024 * 1024;
+const OVERSIZED_COMPRESSED_THRESHOLD_BYTES = 1024 * 1024;
+const INCOMPRESSIBLE_RATIO_THRESHOLD = 0.55;
+const SLOW_UPLOAD_KBPS_THRESHOLD = 60;
 
 function loadSqliteSync() {
   try {
@@ -71,8 +74,18 @@ function analyzeCodexLogsForDisconnects(options = {}) {
     count10054: 0,
     countWsClosed: 0,
     countHttpFallback: 0,
+    countSendRequestError: 0,
+    countSendRequestRetries: 0,
+    avgSendRequestIntervalSec: null,
+    uploadTimeout120sLikely: false,
     maxRequestBytes: 0,
     maxCompressedBytes: 0,
+    largestPayloadPreBytes: 0,
+    largestPayloadPostBytes: 0,
+    largestPayloadCompressRatio: null,
+    likelyImageHeavyPayload: false,
+    latestTokens: null,
+    latestAutoCompactLimit: null,
     oversizedContextRisk: false,
     avgDisconnectIntervalSec: null,
     recentEvents: [],
@@ -101,6 +114,8 @@ function analyzeCodexLogsForDisconnects(options = {}) {
           OR feedback_log_body LIKE '%websocket closed by server%'
           OR feedback_log_body LIKE '%falling back to HTTP%'
           OR feedback_log_body LIKE '%pre_compression_bytes=%'
+          OR feedback_log_body LIKE '%error sending request%'
+          OR feedback_log_body LIKE '%auto_compact_scope_limit=%'
         )
       ORDER BY id DESC
       LIMIT 400
@@ -110,9 +125,17 @@ function analyzeCodexLogsForDisconnects(options = {}) {
     let count10054 = 0;
     let countWsClosed = 0;
     let countHttpFallback = 0;
+    let countSendRequestError = 0;
+    let countSendRequestRetries = 0;
     let maxRequestBytes = 0;
     let maxCompressedBytes = 0;
+    let largestPayloadPreBytes = 0;
+    let largestPayloadPostBytes = 0;
+    let latestTokens = null;
+    let latestAutoCompactLimit = null;
     const disconnectTimestamps = [];
+    const sendRequestFailedTimestamps = [];
+    const sendRequestRetryTimestamps = [];
     const recentEvents = [];
 
     for (const r of rows) {
@@ -122,11 +145,22 @@ function analyzeCodexLogsForDisconnects(options = {}) {
       const is10054 = body.includes('10054');
       const isWsClosed = body.includes('websocket closed by server');
       const isFallback = body.includes('falling back to HTTP');
+      const hasSendReqErr = body.includes('error sending request');
+      const isSendReqFailed = hasSendReqErr && body.includes('Request failed');
+      const isSendReqRetry = hasSendReqErr && body.includes('retrying sampling request');
 
       if (is10053) count10053++;
       if (is10054) count10054++;
       if (isWsClosed) countWsClosed++;
       if (isFallback) countHttpFallback++;
+      if (isSendReqFailed) {
+        countSendRequestError++;
+        if (ts > 0) sendRequestFailedTimestamps.push(ts);
+      }
+      if (isSendReqRetry) {
+        countSendRequestRetries++;
+        if (ts > 0) sendRequestRetryTimestamps.push(ts);
+      }
 
       if (is10053 || is10054 || isWsClosed) {
         disconnectTimestamps.push(ts);
@@ -136,6 +170,17 @@ function analyzeCodexLogsForDisconnects(options = {}) {
             ts,
             isoTime: ts ? new Date(ts * 1000).toISOString() : null,
             kind: is10053 ? 'os_error_10053' : (is10054 ? 'os_error_10054' : 'ws_closed'),
+            target: String(r.target || ''),
+            snippet: sanitizeDiagnosticErrorText(tail)
+          });
+        }
+      } else if (isSendReqFailed || isSendReqRetry) {
+        if (recentEvents.length < 10) {
+          const tail = body.length > 220 ? body.slice(-220) : body;
+          recentEvents.push({
+            ts,
+            isoTime: ts ? new Date(ts * 1000).toISOString() : null,
+            kind: 'send_request_error',
             target: String(r.target || ''),
             snippet: sanitizeDiagnosticErrorText(tail)
           });
@@ -151,14 +196,23 @@ function analyzeCodexLogsForDisconnects(options = {}) {
       }
 
       const preM = body.match(/pre_compression_bytes=(\d+)/);
-      if (preM) {
-        const b = Number(preM[1]);
-        if (b > maxRequestBytes) maxRequestBytes = b;
-      }
       const postM = body.match(/post_compression_bytes=(\d+)/);
-      if (postM) {
-        const b = Number(postM[1]);
-        if (b > maxCompressedBytes) maxCompressedBytes = b;
+      const preVal = preM ? Number(preM[1]) : 0;
+      const postVal = postM ? Number(postM[1]) : 0;
+      if (preVal > maxRequestBytes) maxRequestBytes = preVal;
+      if (postVal > maxCompressedBytes) maxCompressedBytes = postVal;
+      if (preVal >= 512 * 1024 && postVal > largestPayloadPostBytes) {
+        largestPayloadPreBytes = preVal;
+        largestPayloadPostBytes = postVal;
+      }
+
+      if (latestTokens === null) {
+        const tokM = body.match(/total_usage_tokens=(\d+)/);
+        if (tokM) latestTokens = Number(tokM[1]);
+      }
+      if (latestAutoCompactLimit === null) {
+        const limM = body.match(/auto_compact_scope_limit=Some\((\d+)\)/);
+        if (limM) latestAutoCompactLimit = Number(limM[1]);
       }
     }
 
@@ -175,6 +229,40 @@ function analyzeCodexLogsForDisconnects(options = {}) {
       }
     }
 
+    let avgSendRequestIntervalSec = null;
+    const sendTsSource = sendRequestFailedTimestamps.length >= 2
+      ? sendRequestFailedTimestamps
+      : sendRequestRetryTimestamps;
+    if (sendTsSource.length >= 2) {
+      const sortedSend = [...sendTsSource].sort((a, b) => a - b);
+      const sendIntervals = [];
+      for (let i = 1; i < sortedSend.length; i++) {
+        const diff = sortedSend[i] - sortedSend[i - 1];
+        if (diff >= 30 && diff <= 300) sendIntervals.push(diff);
+      }
+      if (sendIntervals.length > 0) {
+        avgSendRequestIntervalSec = Math.round(sendIntervals.reduce((a, b) => a + b, 0) / sendIntervals.length);
+      }
+    }
+
+    const largestPayloadCompressRatio = (largestPayloadPreBytes > 0 && largestPayloadPostBytes > 0)
+      ? Math.round((largestPayloadPostBytes / largestPayloadPreBytes) * 100) / 100
+      : null;
+
+    const likelyImageHeavyPayload = Boolean(
+      maxCompressedBytes >= OVERSIZED_COMPRESSED_THRESHOLD_BYTES
+      && largestPayloadCompressRatio !== null
+      && largestPayloadCompressRatio >= INCOMPRESSIBLE_RATIO_THRESHOLD
+    );
+
+    const uploadTimeout120sLikely = Boolean(
+      (countSendRequestError > 0 || countSendRequestRetries > 0)
+      && (
+        (avgSendRequestIntervalSec !== null && avgSendRequestIntervalSec >= 105 && avgSendRequestIntervalSec <= 135)
+        || maxCompressedBytes >= OVERSIZED_COMPRESSED_THRESHOLD_BYTES
+      )
+    );
+
     return {
       available: true,
       dbPath,
@@ -183,8 +271,18 @@ function analyzeCodexLogsForDisconnects(options = {}) {
       count10054,
       countWsClosed,
       countHttpFallback,
+      countSendRequestError,
+      countSendRequestRetries,
+      avgSendRequestIntervalSec,
+      uploadTimeout120sLikely,
       maxRequestBytes,
       maxCompressedBytes,
+      largestPayloadPreBytes,
+      largestPayloadPostBytes,
+      largestPayloadCompressRatio,
+      likelyImageHeavyPayload,
+      latestTokens,
+      latestAutoCompactLimit,
       oversizedContextRisk: maxRequestBytes >= OVERSIZED_CONTEXT_THRESHOLD_BYTES,
       avgDisconnectIntervalSec,
       recentEvents,
@@ -215,6 +313,10 @@ async function inspectClashStabilityReadOnly(options = {}) {
     activeNodeName: null,
     activeNodeType: null,
     recentNodeDelays: [],
+    activeCodexConnections: 0,
+    activeCodexChain: null,
+    estimatedUploadKBps: null,
+    slowUploadWarning: false,
     nodeTimeoutCount: 0,
     latestLogPath: null
   };
@@ -250,6 +352,41 @@ async function inspectClashStabilityReadOnly(options = {}) {
       result.recentNodeDelays = Array.isArray(p[curName].history)
         ? p[curName].history.slice(-5).map((h) => ({ time: h.time, delay: h.delay }))
         : [];
+    }
+  }
+
+  const connsRes = options._mockConnectionsRes || await queryPipeJson(pipePath, '/connections', 'GET');
+  if (connsRes.ok && connsRes.json && Array.isArray(connsRes.json.connections)) {
+    const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
+    const matched = connsRes.json.connections.filter((c) => {
+      const m = c && c.metadata ? c.metadata : {};
+      const host = String(m.host || '');
+      const proc = String(m.process || '');
+      return /chatgpt\.com|openai\.com/i.test(host) || /codex/i.test(proc);
+    });
+    result.activeCodexConnections = matched.length;
+    if (matched.length > 0) {
+      const firstChains = Array.isArray(matched[0].chains) ? matched[0].chains : null;
+      result.activeCodexChain = firstChains;
+      if (!result.activeNodeName && firstChains && firstChains[0]) {
+        result.activeNodeName = firstChains[0];
+      }
+    }
+    const speeds = [];
+    for (const c of matched) {
+      const uploadBytes = Number(c.upload) || 0;
+      const startMs = c.start ? Date.parse(c.start) : NaN;
+      if (uploadBytes >= 64 * 1024 && Number.isFinite(startMs)) {
+        const elapsedSec = (nowMs - startMs) / 1000;
+        if (elapsedSec >= 2 && elapsedSec <= 600) {
+          speeds.push((uploadBytes / 1024) / elapsedSec);
+        }
+      }
+    }
+    if (speeds.length > 0) {
+      const minKbps = Math.min(...speeds);
+      result.estimatedUploadKBps = Math.round(minKbps * 10) / 10;
+      result.slowUploadWarning = result.estimatedUploadKBps < SLOW_UPLOAD_KBPS_THRESHOLD;
     }
   }
 
@@ -541,7 +678,32 @@ async function diagnoseDisconnectRisk(options = {}) {
       `${logs.countHttpFallback} 次触发 HTTP 回退${logs.avgDisconnectIntervalSec ? `（平均约 ${logs.avgDisconnectIntervalSec} 秒断一次）` : ''}。`
     );
   }
-  if (logs.oversizedContextRisk) {
+  if (logs.countSendRequestError > 0 || logs.countSendRequestRetries > 0) {
+    const intervalHint = logs.avgSendRequestIntervalSec
+      ? `（平均间隔约 ${logs.avgSendRequestIntervalSec} 秒`
+      : '';
+    const is120sHint = logs.uploadTimeout120sLikely
+      ? `${intervalHint ? '，' : '（'}符合 120 秒单次上传超时特征，非 os error 10053）`
+      : (intervalHint ? '）' : '');
+    findings.push(
+      `最近 ${logs.hours} 小时内检测到 ${logs.countSendRequestError} 次 \`error sending request\` 请求发送失败、` +
+      `${logs.countSendRequestRetries} 次采样重试${intervalHint}${is120sHint}。`
+    );
+  }
+  if (logs.likelyImageHeavyPayload) {
+    const preMb = (logs.largestPayloadPreBytes / (1024 * 1024)).toFixed(2);
+    const postMb = (logs.largestPayloadPostBytes / (1024 * 1024)).toFixed(2);
+    const pct = Math.round((logs.largestPayloadCompressRatio || 0) * 100);
+    const tokenNote = (logs.latestTokens !== null && logs.latestAutoCompactLimit !== null && logs.latestTokens < logs.latestAutoCompactLimit)
+      ? `当前会话约 ${logs.latestTokens} tokens，尚未达到自动压缩阈值 ${logs.latestAutoCompactLimit}，因此不会自动压缩，每轮对话都会重复上传这 ${postMb} MB。`
+      : '';
+    findings.push(
+      `检测到含大图/不可压缩大包会话：压缩前 ${preMb} MB → zstd 压缩后仍有 ${postMb} MB（压缩后占比 ${pct}%，常见于工具输出或对话中嵌入了 base64 图片/截图）。${tokenNote}`
+    );
+    recommendations.push(
+      '【含大图会话立即减重】在当前对话直接发送 `/compact`（或新开一个会话）清掉历史 base64 图片后，单次请求体可从数 MB 立刻降回几十 KB。'
+    );
+  } else if (logs.oversizedContextRisk) {
     const mb = (logs.maxRequestBytes / (1024 * 1024)).toFixed(2);
     const zstdMb = logs.maxCompressedBytes ? (logs.maxCompressedBytes / (1024 * 1024)).toFixed(2) : null;
     findings.push(
@@ -549,6 +711,16 @@ async function diagnoseDisconnectRisk(options = {}) {
       'Codex 默认 Responses WebSocket 传输大上下文或思考停顿超过约 90 秒时，极易被本地/中间链路判定超时并触发 10053 中止。'
     );
     recommendations.push('【立即可用】在长会话中执行 `/compact` 压缩上下文，或开启新会话继续，避免单轮请求超过 2 MB。');
+  }
+  if (clash.slowUploadWarning || (logs.uploadTimeout120sLikely && clash.activeNodeName)) {
+    const speedPart = clash.estimatedUploadKBps !== null ? `，实测活跃连接平均上传仅约 ${clash.estimatedUploadKBps} KB/s` : '';
+    const nodePart = clash.activeNodeName ? `当前 Clash 节点「${clash.activeNodeName}」` : '当前 Clash 节点';
+    findings.push(
+      `${nodePart}上传带宽偏慢${speedPart}，上传超过 1 MB 的 zstd 请求包时容易卡到 Codex 约 120 秒请求超时线并触发 \`error sending request\` 重连。`
+    );
+    recommendations.push(
+      `【切换更快上传节点】请在 Clash Verge 中避开${clash.activeNodeName ? `「${clash.activeNodeName}」` : '当前慢速节点'}，改用上传更稳/带宽更高的节点（建议 >= 200 KB/s，2.5 MB 约 12 秒即可传完，避免撞 120 秒超时）。`
+    );
   }
   if (clash.keepAliveUnset) {
     findings.push(
@@ -589,6 +761,9 @@ async function diagnoseDisconnectRisk(options = {}) {
 
 module.exports = {
   OVERSIZED_CONTEXT_THRESHOLD_BYTES,
+  OVERSIZED_COMPRESSED_THRESHOLD_BYTES,
+  INCOMPRESSIBLE_RATIO_THRESHOLD,
+  SLOW_UPLOAD_KBPS_THRESHOLD,
   MIHOMO_KEEPALIVE_KEYS,
   MIHOMO_KEEPALIVE_MERGE_YAML,
   upsertYamlTopLevelKeys,
