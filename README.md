@@ -83,7 +83,16 @@ codex-notun.cmd --use-npm-cli -- --version
 codex-notun.cmd --use-bundled-cli -- --version
 ```
 
-### 3. 诊断与一键防断连优化
+### 3. 可视化控制面板（放在 Codex 旁边纯鼠标点击）
+官方本地插件不开放侧边栏挂载点，因此本工具包额外提供**零注入、不修改 `app.asar`** 的独立侧边小窗控制台（440×860 独立 Edge/Chrome App 窗口）：
+- 双击 **[`控制面板.cmd`](控制面板.cmd)** 或桌面的 **`Codex 免 TUN 面板.lnk`** 即可打开，停靠在 Codex Desktop 旁边使用。
+- 界面内支持纯鼠标一键操作：
+  - 实时绿/红灯查看本地代理连通性、TUN 状态、Clash 节点及估算上传速度、15s TCP 保活、`10053`/`120s 上传超时` 计数；
+  - 一键切换 **三档自动压缩上下文上限**（`120,000` / `180,000` / `250,000` / 自定义 / 恢复默认）；
+  - 一键触发 **10053 & 120s 超时诊断**、**查看脱敏 Clash 连接链**、**写入/还原 Clash 15s 保活**、**一键启动 Codex 免 TUN** 与 **刷新插件**。
+- 可运行 `codex-notun-tool.cmd panel-shortcut --desktop` 单独在桌面生成该快捷方式。
+
+### 4. 诊断与一键防断连优化（命令行 / 批处理）
 - 双击 **[`诊断检查.cmd`](诊断检查.cmd)**：检查桌面版/CLI 安装路径、WinINet 状态、TUN 网卡状态、`respect_system_proxy` 冲突与代理健康度（支持离线运行）。
 - 双击 **[`排查10053断连.cmd`](排查10053断连.cmd)**：只读扫描 `logs_2.sqlite` 的 `os error 10053` 断连、`error sending request`（120 秒单次上传超时）、含大图/难压缩大包（zstd 压缩后 `> 1 MB` 且 token 未达自动压缩阈值）及 Clash 节点实时上传速度与保活参数，自动提示何时该切换 Clash 节点或发送 `/compact`。
 - 一键命令行命令：
@@ -94,6 +103,7 @@ codex-notun.cmd --use-bundled-cli -- --version
   codex-notun-tool.cmd stabilize-all --compact-limit 180000
   codex-notun-tool.cmd fix-keepalive
   codex-notun-tool.cmd restore-keepalive
+  codex-notun-tool.cmd panel
   ```
 
 ---

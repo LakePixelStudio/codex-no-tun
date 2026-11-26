@@ -25,7 +25,7 @@ test('plugin-validation: manifest 结构、Skill frontmatter、隐私审计及�
 
   const pj = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
   assert.equal(pj.name, 'codex-no-tun');
-  assert.equal(pj.version, '0.5.0');
+  assert.equal(pj.version, '0.6.0');
   assert.equal(pj.skills, './skills/');
   assert.equal(Array.isArray(pj.interface?.defaultPrompt), true);
   assert.ok(pj.interface.defaultPrompt.length <= 3, 'Codex manifest 最多支持 3 条 defaultPrompt');

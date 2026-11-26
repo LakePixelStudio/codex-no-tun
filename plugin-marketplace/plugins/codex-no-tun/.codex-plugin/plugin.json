@@ -1,6 +1,6 @@
 {
   "name": "codex-no-tun",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Windows Codex 免 TUN 代理诊断、状态检查、10053/120s 上传超时与大图大包断连防护及三档自动压缩插件（不修改 app.asar 与全局代理）",
   "author": {
     "name": "Codex No-TUN Contributors"

@@ -353,11 +353,104 @@ function createStandaloneNoTunLauncher(options = {}) {
   };
 }
 
+/**
+ * Pure ASCII VBScript launcher for the clickable side-panel window (no console flash).
+ */
+function generateWindowsPanelVbs({ nodeExe, cliJsPath }) {
+  if (!nodeExe || !cliJsPath) {
+    throw new Error('缺少 Node.js 或 cli.js 路径，无法生成面板启动脚本');
+  }
+  const safeNode = vbsString(nodeExe);
+  const safeCli = vbsString(cliJsPath);
+  const msgMissing = vbsString('未找到 Node.js 或工具包脚本：');
+  const msgTitle = vbsString('Codex 免 TUN 控制台');
+
+  return [
+    'Option Explicit',
+    'Dim nodeExe, cliJs, fso, shell, cmd',
+    `nodeExe = ${safeNode}`,
+    `cliJs = ${safeCli}`,
+    'Set fso = CreateObject("Scripting.FileSystemObject")',
+    'Set shell = CreateObject("WScript.Shell")',
+    'If Not fso.FileExists(nodeExe) Or Not fso.FileExists(cliJs) Then',
+    `  MsgBox ${msgMissing} & vbCrLf & nodeExe & vbCrLf & cliJs, vbExclamation, ${msgTitle}`,
+    '  WScript.Quit 1',
+    'End If',
+    'cmd = """" & nodeExe & """ """ & cliJs & """ panel --auto-exit"',
+    'shell.Run cmd, 0, False',
+    ''
+  ].join('\r\n');
+}
+
+function createPanelLauncher(options = {}) {
+  const fsImpl = options.fs || fs;
+  const projectRoot = path.resolve(options.projectRoot || path.resolve(__dirname, '..'));
+  const installs = options.installations || detectCodexInstallations(options);
+  const nodeExe = options.nodeExe || resolveNodeExecutable(options);
+  if (!nodeExe) {
+    throw new Error('未检测到 Node.js 可执行文件，无法生成面板快捷方式');
+  }
+  const cliJsPath = options.cliJsPath || path.join(projectRoot, 'src', 'cli.js');
+  const outDir = path.resolve(options.outDir || path.join(projectRoot, 'launcher'));
+  fsImpl.mkdirSync(outDir, { recursive: true });
+  const vbsPath = path.join(outDir, 'launch-codex-panel.vbs');
+  const vbsContent = generateWindowsPanelVbs({ nodeExe, cliJsPath });
+  const tmpPath = `${vbsPath}.${process.pid}.${Date.now()}.tmp`;
+  fsImpl.writeFileSync(tmpPath, vbsContent, 'utf8');
+  fsImpl.renameSync(tmpPath, vbsPath);
+
+  const iconTarget = options.iconPath
+    || installs.desktop?.msix?.packageExe
+    || installs.desktop?.standalone
+    || '%SystemRoot%\\System32\\shell32.dll';
+
+  const shortcutDir = options.shortcutDir ? path.resolve(options.shortcutDir) : outDir;
+  const rawName = String(options.shortcutName || 'Codex 免 TUN 面板').replace(/[<>:"/\\|?*\r\n\0]/g, '').trim() || 'Codex 免 TUN 面板';
+  const lnkName = rawName.toLowerCase().endsWith('.lnk') ? rawName : `${rawName}.lnk`;
+
+  const shortcuts = [];
+  if (options.createShortcut !== false) {
+    const primaryLnk = createShortcutLnk({
+      lnkPath: path.join(shortcutDir, lnkName),
+      vbsPath,
+      iconTarget,
+      workDir: projectRoot,
+      description: '打开 Codex 免 TUN 可视化侧边控制台（零注入）',
+      _execFileSync: options._execFileSync
+    });
+    shortcuts.push(primaryLnk);
+
+    if (options.alsoDesktop && options.desktopDir !== false) {
+      const desktopDir = options.desktopDir || path.join(process.env.USERPROFILE || require('os').homedir(), 'Desktop');
+      const desktopLnk = createShortcutLnk({
+        lnkPath: path.join(desktopDir, lnkName),
+        vbsPath,
+        iconTarget,
+        workDir: projectRoot,
+        description: '打开 Codex 免 TUN 可视化侧边控制台（零注入）',
+        _execFileSync: options._execFileSync
+      });
+      shortcuts.push(desktopLnk);
+    }
+  }
+
+  return {
+    ok: true,
+    nodeExe,
+    cliJsPath,
+    launcherPath: vbsPath,
+    shortcutPath: shortcuts[0] || null,
+    shortcuts
+  };
+}
+
 module.exports = {
   applyProxyVarsToEnv,
   buildDesktopLaunchSpec,
   buildCliProxyEnv,
   generateWindowsNoTunVbs,
+  generateWindowsPanelVbs,
   createShortcutLnk,
-  createStandaloneNoTunLauncher
+  createStandaloneNoTunLauncher,
+  createPanelLauncher
 };

@@ -31,8 +31,15 @@ const {
 const {
   buildDesktopLaunchSpec,
   buildCliProxyEnv,
-  createStandaloneNoTunLauncher
+  createStandaloneNoTunLauncher,
+  createPanelLauncher
 } = require('./launcher');
+const {
+  getPanelStatePath,
+  queryRunningPanelHealth,
+  openPanelWindow,
+  startPanelServer
+} = require('./panel-server');
 const {
   previewTomlKeyChange,
   applyTomlKeyChange,
@@ -96,6 +103,9 @@ function parseArgs(argv) {
     else if (t === '--use-npm-cli') { flags.useNpmCli = true; }
     else if (t === '--https-only') { flags.httpsOnly = true; }
     else if (t === '--hours') { flags.hours = rest[++i]; }
+    else if (t === '--port') { flags.port = rest[++i]; }
+    else if (t === '--no-open') { flags.noOpen = true; }
+    else if (t === '--auto-exit') { flags.autoExit = true; }
     else if ((t === '--help' || t === '-h') && !forwardUnrecognized) { flags.help = true; }
     else if (forwardUnrecognized) { passthrough.push(t); }
     else { flags._.push(t); }
@@ -123,6 +133,8 @@ function printHelp() {
   node src/cli.js cli [--proxy <url>] [--bypass <list>] [--https-only] [--use-bundled-cli|--use-npm-cli] [-- <codex args...>]
   node src/cli.js clash-evidence [--all] [--json]
   node src/cli.js config preview|apply|restore [--section features|root] [--key respect_system_proxy] [--value false]
+  node src/cli.js panel [--port <port>] [--no-open] [--auto-exit]
+  node src/cli.js panel-shortcut [--desktop] [--no-shortcut]
   node src/cli.js plugin status|install|uninstall|guide
 
 说明:
@@ -766,7 +778,19 @@ async function cmdSetup(flags) {
     alsoDesktop: true,
     createShortcut: true
   });
-  console.log(`\n[1/4] 代理与桌面快捷方式已就绪: ${launcherRes.shortcuts.join(' , ')}`);
+  let panelShortcuts = [];
+  try {
+    const panelRes = createPanelLauncher({
+      projectRoot: PROJECT_ROOT,
+      outDir: path.join(PROJECT_ROOT, 'launcher'),
+      shortcutDir: PROJECT_ROOT,
+      shortcutName: 'Codex 免 TUN 面板',
+      alsoDesktop: true,
+      createShortcut: true
+    });
+    panelShortcuts = panelRes.shortcuts || [];
+  } catch {}
+  console.log(`\n[1/4] 代理与桌面快捷方式已就绪: ${[...launcherRes.shortcuts, ...panelShortcuts].join(' , ')}`);
 
   let compactChoice = flags.compact || null;
   let applyKeepAlive = Boolean(flags.keepalive);
@@ -893,7 +917,9 @@ async function cmdUninstall(flags) {
   const desktopDir = path.join(process.env.USERPROFILE || os.homedir(), 'Desktop');
   for (const lnk of [
     path.join(desktopDir, 'Codex 免 TUN.lnk'),
-    path.join(PROJECT_ROOT, 'Codex 免 TUN.lnk')
+    path.join(PROJECT_ROOT, 'Codex 免 TUN.lnk'),
+    path.join(desktopDir, 'Codex 免 TUN 面板.lnk'),
+    path.join(PROJECT_ROOT, 'Codex 免 TUN 面板.lnk')
   ]) {
     if (fs.existsSync(lnk)) {
       try { fs.unlinkSync(lnk); results.removedShortcuts.push(lnk); } catch {}
@@ -906,6 +932,73 @@ async function cmdUninstall(flags) {
     console.log('=== Codex 免 TUN 还原与卸载完成 ===');
     console.log(JSON.stringify(results, null, 2));
     console.log(`如需彻底清理残留缓存，可删除目录: ${path.join(localAppData, 'CodexNoTun')}`);
+  }
+  return 0;
+}
+
+async function cmdPanel(flags) {
+  try { recordToolkitRoot(PROJECT_ROOT); } catch {}
+  const statePath = getPanelStatePath();
+  if (fs.existsSync(statePath)) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      if (prev && Number.isInteger(Number(prev.port)) && Number(prev.port) > 0) {
+        const alive = await queryRunningPanelHealth(Number(prev.port));
+        if (alive && alive.ok) {
+          const url = `http://127.0.0.1:${prev.port}`;
+          if (!flags.noOpen) openPanelWindow(url);
+          if (flags.json) {
+            console.log(JSON.stringify({ ok: true, reused: true, url, pid: alive.pid }, null, 2));
+          } else {
+            console.log(`控制面板已在运行: ${url} (PID ${alive.pid})`);
+          }
+          return 0;
+        }
+      }
+    } catch {}
+  }
+
+  const srv = await startPanelServer({
+    port: flags.port ? Number(flags.port) : 0,
+    autoExit: Boolean(flags.autoExit),
+    projectRoot: PROJECT_ROOT
+  });
+  if (!flags.noOpen) {
+    openPanelWindow(srv.url);
+  }
+  if (flags.json) {
+    console.log(JSON.stringify({ ok: true, reused: false, url: srv.url, pid: process.pid, version: srv.version }, null, 2));
+  } else {
+    console.log(`Codex 免 TUN 可视化控制面板已启动: ${srv.url}`);
+    console.log('可将该 440x860 小窗放在 Codex Desktop 旁边纯鼠标点击操作；关闭窗口或点击右上角「关闭」即可退出。');
+  }
+  const onSig = () => { srv.stop(); };
+  process.once('SIGINT', onSig);
+  process.once('SIGTERM', onSig);
+  await srv.waitForClose();
+  process.removeListener('SIGINT', onSig);
+  process.removeListener('SIGTERM', onSig);
+  return 0;
+}
+
+function cmdPanelShortcut(flags) {
+  try { recordToolkitRoot(PROJECT_ROOT); } catch {}
+  const outDir = flags.out ? path.resolve(flags.out) : path.join(PROJECT_ROOT, 'launcher');
+  const shortcutDir = flags.out ? outDir : PROJECT_ROOT;
+  const res = createPanelLauncher({
+    projectRoot: PROJECT_ROOT,
+    outDir,
+    shortcutDir,
+    shortcutName: flags.name || 'Codex 免 TUN 面板',
+    alsoDesktop: Boolean(flags.desktop),
+    createShortcut: !flags.noShortcut
+  });
+  if (flags.json) {
+    console.log(JSON.stringify(res, null, 2));
+  } else {
+    console.log('已生成可视化控制面板启动器与快捷方式：');
+    console.log(`  启动脚本: ${res.launcherPath}`);
+    (res.shortcuts || []).forEach((s) => console.log(`  快捷方式: ${s}`));
   }
   return 0;
 }
@@ -940,6 +1033,8 @@ async function main() {
   }
   if (cmd === 'plugin') return cmdPlugin(flags);
   if (cmd === 'config') return cmdConfig(flags);
+  if (cmd === 'panel') return await cmdPanel(flags);
+  if (cmd === 'panel-shortcut') return cmdPanelShortcut(flags);
 
   console.error(`未知命令: ${cmd}`);
   printHelp();

@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codex 免 TUN 控制台</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card: #111a2e;
+      --card-hover: #17233d;
+      --border: #1e2d4a;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #0ea5e9;
+      --accent-soft: rgba(14, 165, 233, 0.16);
+      --green: #22c55e;
+      --green-soft: rgba(34, 197, 94, 0.14);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.14);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.14);
+      --btn-bg: #1a2742;
+      --btn-hover: #243559;
+      --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    body.light {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --card-hover: #f8fafc;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #0284c7;
+      --accent-soft: rgba(2, 132, 199, 0.12);
+      --green: #16a34a;
+      --green-soft: rgba(22, 163, 74, 0.12);
+      --amber: #d97706;
+      --amber-soft: rgba(217, 119, 6, 0.12);
+      --red: #dc2626;
+      --red-soft: rgba(220, 38, 38, 0.12);
+      --btn-bg: #f1f5f9;
+      --btn-hover: #e2e8f0;
+      --shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 12px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .wrap {
+      max-width: 480px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .logo-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .title-text {
+      font-weight: 700;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 5px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .icon-btn:hover { background: var(--btn-hover); }
+    .icon-btn:active { transform: scale(0.97); }
+    .icon-btn.danger:hover {
+      background: var(--red-soft);
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.3px;
+      margin-bottom: 9px;
+    }
+
+    .auto-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+    .stat-item {
+      padding: 8px 9px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: rgba(125, 145, 180, 0.04);
+      min-width: 0;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    .stat-val {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    .dot.err { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      margin-bottom: 8px;
+    }
+
+    .preset-btn {
+      text-align: left;
+      padding: 9px 8px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover { background: var(--btn-hover); border-color: var(--accent); }
+    .preset-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+
+    .preset-name { font-weight: 700; font-size: 12px; margin-bottom: 2px; }
+    .preset-num { font-size: 12px; color: var(--accent); font-weight: 700; }
+    .preset-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .custom-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .custom-input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 9px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: var(--btn-hover); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn.primary:hover { filter: brightness(1.08); }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+    .action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 9px 8px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .action-btn:hover { background: var(--btn-hover); border-color: var(--accent); }
+    .action-btn.primary {
+      grid-column: span 2;
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+      border-color: transparent;
+      color: #fff;
+      font-size: 13px;
+      padding: 10px;
+    }
+    .action-btn.primary:hover { filter: brightness(1.08); }
+    .action-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .toast {
+      display: none;
+      padding: 8px 10px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .toast.show { display: block; }
+    .toast.ok { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+    .toast.warn { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); }
+    .toast.err { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+
+    .output-box {
+      max-height: 290px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-size: 12px;
+    }
+
+    .finding {
+      padding: 7px 9px;
+      border-radius: 8px;
+      border-left: 3px solid var(--amber);
+      background: var(--amber-soft);
+    }
+    .rec {
+      padding: 7px 9px;
+      border-radius: 8px;
+      border-left: 3px solid var(--accent);
+      background: var(--accent-soft);
+    }
+    .conn-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .conn-table th, .conn-table td {
+      padding: 5px 6px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .conn-table th { color: var(--muted); font-weight: 600; }
+    .muted-note { color: var(--muted); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="title-group">
+        <div class="logo-dot">C</div>
+        <div class="title-text">Codex 免 TUN 控制台</div>
+        <span class="badge">v{{APP_VERSION}}</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="themeBtn" title="切换深浅主题">🌓</button>
+        <button class="icon-btn" id="refreshBtn" title="立即刷新">🔄 刷新</button>
+        <button class="icon-btn danger" id="shutdownBtn" title="关闭面板并退出后台服务">⏻ 关闭</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>实时状态总览</span>
+        <label class="auto-toggle">
+          <input type="checkbox" id="autoRefreshChk" checked />
+          <span>10s 自动刷新</span>
+        </label>
+      </div>
+      <div class="status-grid">
+        <div class="stat-item">
+          <div class="stat-label">本地代理</div>
+          <div class="stat-val" id="stProxy"><span class="dot warn"></span><span>检测中...</span></div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">TUN 虚拟网卡</div>
+          <div class="stat-val" id="stTun"><span class="dot warn"></span><span>检测中...</span></div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Codex 桌面版进程</div>
+          <div class="stat-val" id="stDesktop"><span class="dot warn"></span><span>检测中...</span></div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Clash 15s TCP 保活</div>
+          <div class="stat-val" id="stKeepAlive"><span class="dot warn"></span><span>检测中...</span></div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">当前节点 / 上传估算</div>
+          <div class="stat-val" id="stNode"><span class="dot warn"></span><span>检测中...</span></div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">近 24h 断连 / 上传超时</div>
+          <div class="stat-val" id="stErrors"><span class="dot warn"></span><span>检测中...</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>自动压缩上下文上限</span>
+        <span id="compactCurrentLabel">读取中...</span>
+      </div>
+      <div class="preset-grid">
+        <button class="preset-btn" data-preset="aggressive">
+          <div class="preset-name">激进抗断连</div>
+          <div class="preset-num">120,000</div>
+          <div class="preset-sub">约 24% · 最防断</div>
+        </button>
+        <button class="preset-btn" data-preset="balanced">
+          <div class="preset-name">平衡推荐</div>
+          <div class="preset-num">180,000</div>
+          <div class="preset-sub">约 36% · 通用</div>
+        </button>
+        <button class="preset-btn" data-preset="relaxed">
+          <div class="preset-name">较宽松</div>
+          <div class="preset-num">250,000</div>
+          <div class="preset-sub">约 50% · 保留多</div>
+        </button>
+      </div>
+      <div class="custom-row">
+        <input type="number" id="customCompactInput" class="custom-input" min="20000" max="450000" step="1000" placeholder="自定义 (20000~450000)" />
+        <button class="btn primary" id="applyCustomBtn">应用</button>
+        <button class="btn" id="restoreCompactBtn">恢复默认</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>一键鼠标操作（零注入 / 不改 app.asar）</span></div>
+      <div class="action-grid">
+        <button class="action-btn primary" id="launchDesktopBtn">🚀 一键启动 Codex 免 TUN</button>
+        <button class="action-btn" id="diagnoseBtn">🩺 排查 10053 / 120s 超时</button>
+        <button class="action-btn" id="clashConnBtn">📡 查看脱敏连接链</button>
+        <button class="action-btn" id="fixKeepAliveBtn">⚡ 写入 Clash 15s 保活</button>
+        <button class="action-btn" id="restoreKeepAliveBtn">↩ 还原 Clash 保活</button>
+        <button class="action-btn" id="refreshPluginBtn" style="grid-column: span 2;">🔌 安装 / 刷新 Codex 插件到最新版本</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span id="outputTitle">诊断与操作结果</span>
+        <span class="muted-note" id="lastUpdated">-</span>
+      </div>
+      <div class="output-box" id="outputBox">
+        <div class="muted-note">就绪。点击上方按钮可直接查看诊断结论、节点连接链或切换自动压缩上限。</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PANEL_TOKEN = "{{PANEL_TOKEN}}";
+    let refreshTimer = null;
+
+    function esc(str) {
+      return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showToast(msg, kind = 'ok') {
+      const el = document.getElementById('toast');
+      el.className = 'toast show ' + kind;
+      el.textContent = msg;
+      clearTimeout(el._t);
+      el._t = setTimeout(() => { el.className = 'toast'; }, 6000);
+    }
+
+    function setStat(id, dotKind, text, title) {
+      const el = document.getElementById(id);
+      el.innerHTML = `<span class="dot ${dotKind}"></span><span>${esc(text)}</span>`;
+      el.title = title || text;
+    }
+
+    async function apiGet(path) {
+      const res = await fetch(path, { cache: 'no-store' });
+      return await res.json();
+    }
+
+    async function apiPost(path, body = {}) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Codex-Panel-Token': PANEL_TOKEN
+        },
+        body: JSON.stringify(body)
+      });
+      return await res.json();
+    }
+
+    function renderOverview(data) {
+      const p = data.proxy || {};
+      const h = p.health || {};
+      const env = data.environment || {};
+      const cdx = data.codex || {};
+      const disc = data.disconnect || {};
+      const clash = disc.clash || {};
+      const logs = disc.logs || {};
+      const cl = data.compactLimit || {};
+
+      if (h.proxyReachable) {
+        setStat('stProxy', 'ok', `${p.configuredUrl || '可达'} (可达)`, '本地代理端口可达');
+      } else {
+        setStat('stProxy', 'err', `${p.configuredUrl || '未配置'} (不可达)`, h.error || '请启动 Clash / Mihomo');
+      }
+
+      if (env.tunUp) {
+        setStat('stTun', 'warn', '已开启 (非免TUN)', '当前系统存在活跃 TUN 网卡');
+      } else {
+        setStat('stTun', 'ok', '已关闭 (免TUN就绪)', '未检测到活跃 TUN 网卡');
+      }
+
+      if (cdx.desktopRunning) {
+        setStat('stDesktop', 'ok', `运行中 (${cdx.runningProcessCount || 1} 进程)`, `桌面版 ${cdx.desktopVersion || ''}`);
+      } else {
+        setStat('stDesktop', 'warn', '未运行 (可点击启动)', `桌面版 ${cdx.desktopVersion || '未检测到'}`);
+      }
+
+      if (clash.pipeReachable) {
+        if (!clash.keepAliveUnset && clash.keepAliveIdle && clash.keepAliveInterval) {
+          setStat('stKeepAlive', 'ok', `已开启 (${clash.keepAliveIdle}s/${clash.keepAliveInterval}s)`, 'Clash 15s TCP Keep-Alive 已生效');
+        } else {
+          setStat('stKeepAlive', 'warn', '未开启保活', '建议点击「写入 Clash 15s 保活」');
+        }
+      } else {
+        setStat('stKeepAlive', 'err', 'Clash 管道未连通', '请确认 Clash Verge 正在运行');
+      }
+
+      if (clash.pipeReachable) {
+        const speed = clash.estimatedUploadKBps != null ? `${clash.estimatedUploadKBps} KB/s` : '空闲';
+        const nodeText = `${clash.activeNodeName || '未知'} · ${speed}`;
+        setStat('stNode', clash.slowUploadWarning ? 'warn' : 'ok', nodeText, nodeText);
+      } else {
+        setStat('stNode', 'warn', '暂无节点数据');
+      }
+
+      const c10053 = logs.count10053 || 0;
+      const cSend = logs.countSendRequestError || 0;
+      const errSummary = `10053:${c10053} · 超时:${cSend}`;
+      setStat('stErrors', (c10053 > 0 || cSend > 0) ? 'warn' : 'ok', errSummary, errSummary);
+
+      const labelText = cl.configured ? `当前: ${cl.tokens} (${cl.label})` : `当前: ${cl.label || '官方默认'}`;
+      document.getElementById('compactCurrentLabel').textContent = labelText;
+
+      document.querySelectorAll('.preset-btn').forEach((btn) => {
+        const preset = btn.dataset.preset;
+        const map = { aggressive: 120000, balanced: 180000, relaxed: 250000 };
+        btn.classList.toggle('active', cl.configured && Number(cl.tokens) === map[preset]);
+      });
+
+      document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+      return disc;
+    }
+
+    function renderDiagnose(disc, title = '断连与上传超时诊断') {
+      document.getElementById('outputTitle').textContent = title;
+      const box = document.getElementById('outputBox');
+      const findings = Array.isArray(disc.findings) ? disc.findings : [];
+      const recs = Array.isArray(disc.recommendations) ? disc.recommendations : [];
+      if (findings.length === 0 && recs.length === 0) {
+        box.innerHTML = '<div class="muted-note">近 24 小时未发现明显 10053 断连或 120s 上传超时风险，配置健康。</div>';
+        return;
+      }
+      const html = [];
+      for (const f of findings) {
+        html.push(`<div class="finding">${esc(f)}</div>`);
+      }
+      for (const r of recs) {
+        html.push(`<div class="rec">${esc(r)}</div>`);
+      }
+      box.innerHTML = html.join('');
+    }
+
+    async function refreshOverview(alsoRenderDiag = false) {
+      try {
+        const data = await apiGet('/api/overview');
+        const disc = renderOverview(data);
+        if (alsoRenderDiag) renderDiagnose(disc, '实时诊断摘要');
+      } catch (err) {
+        showToast('刷新状态失败: ' + err.message, 'err');
+      }
+    }
+
+    async function applyCompact(value) {
+      try {
+        const res = await apiPost('/api/compact-limit', { value });
+        if (!res.ok) {
+          showToast(res.error || '设置失败', 'err');
+          return;
+        }
+        const r = res.result || {};
+        if (r.action === 'restore') {
+          showToast('已恢复官方默认压缩阈值（不改会话与登录态）', 'ok');
+        } else {
+          showToast(`已切换自动压缩上限为 ${r.tokens} (${r.label})`, 'ok');
+        }
+        await refreshOverview(false);
+      } catch (err) {
+        showToast('操作失败: ' + err.message, 'err');
+      }
+    }
+
+    document.querySelectorAll('.preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => applyCompact(btn.dataset.preset));
+    });
+
+    document.getElementById('applyCustomBtn').addEventListener('click', () => {
+      const val = document.getElementById('customCompactInput').value.trim();
+      if (!val) { showToast('请输入 20000 ~ 450000 之间的整数', 'warn'); return; }
+      applyCompact(val);
+    });
+
+    document.getElementById('restoreCompactBtn').addEventListener('click', () => applyCompact('restore'));
+    document.getElementById('refreshBtn').addEventListener('click', () => refreshOverview(true));
+
+    document.getElementById('diagnoseBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const disc = await apiPost('/api/diagnose', { hours: 24 });
+        renderDiagnose(disc, '近 24 小时断连与 120s 超时诊断');
+        showToast('诊断完成', 'ok');
+      } catch (err) {
+        showToast('诊断失败: ' + err.message, 'err');
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById('clashConnBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await apiPost('/api/clash-evidence', {});
+        document.getElementById('outputTitle').textContent = '脱敏 Clash 实时连接链';
+        const box = document.getElementById('outputBox');
+        if (!res.ok) {
+          box.innerHTML = `<div class="finding">${esc(res.error || '无法读取 Clash 连接')}</div>`;
+          return;
+        }
+        const rows = (res.connections || []).slice(0, 20);
+        if (rows.length === 0) {
+          box.innerHTML = '<div class="muted-note">当前暂无匹配的 Codex / chatgpt.com 活跃连接（发一条消息后再点此刷新）。</div>';
+          return;
+        }
+        box.innerHTML = `
+          <table class="conn-table">
+            <thead><tr><th>主机</th><th>类型</th><th>进程</th><th>节点链</th></tr></thead>
+            <tbody>
+              ${rows.map((c) => `<tr><td>${esc(c.host)}</td><td>${esc(c.type)}</td><td>${esc(c.process)}</td><td>${esc((c.chains || []).join(' → '))}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        showToast('获取连接失败: ' + err.message, 'err');
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById('fixKeepAliveBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await apiPost('/api/fix-keepalive', {});
+        if (res.ok && res.verified) {
+          showToast('已写入 Clash 15s TCP 保活并热重载验证通过', 'ok');
+        } else {
+          showToast('写入完成但未验证通过: ' + (res.reloadError || '请检查 Clash Verge'), 'warn');
+        }
+        await refreshOverview(false);
+      } catch (err) {
+        showToast('保活写入失败: ' + err.message, 'err');
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById('restoreKeepAliveBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await apiPost('/api/restore-keepalive', {});
+        if (res.ok) showToast('已还原 Clash 保活配置', 'ok');
+        else showToast(res.error || '未找到保活还原记录', 'warn');
+        await refreshOverview(false);
+      } catch (err) {
+        showToast('还原失败: ' + err.message, 'err');
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById('launchDesktopBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await apiPost('/api/launch-desktop', {});
+        if (res.ok) showToast(`已通过进程级代理启动 Codex Desktop (${res.proxy || ''})`, 'ok');
+        else showToast(res.error || '启动失败', 'warn');
+        setTimeout(() => refreshOverview(false), 1500);
+      } catch (err) {
+        showToast('启动失败: ' + err.message, 'err');
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById('refreshPluginBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await apiPost('/api/plugin-install', {});
+        if (res.ok) showToast(res.message || '插件已更新，重启 Codex Desktop 生效', 'ok');
+        else showToast(res.error || '插件更新失败', 'err');
+      } catch (err) {
+        showToast('插件更新失败: ' + err.message, 'err');
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById('shutdownBtn').addEventListener('click', async () => {
+      try { await apiPost('/api/shutdown', {}); } catch {}
+      showToast('控制台服务已关闭，可关闭此窗口。', 'ok');
+      setTimeout(() => { try { window.close(); } catch {} }, 250);
+    });
+
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.body.classList.toggle('light');
+      try { localStorage.setItem('codexNoTunTheme', document.body.classList.contains('light') ? 'light' : 'dark'); } catch {}
+    });
+    try {
+      if (localStorage.getItem('codexNoTunTheme') === 'light') document.body.classList.add('light');
+    } catch {}
+
+    function syncAutoRefresh() {
+      clearInterval(refreshTimer);
+      if (document.getElementById('autoRefreshChk').checked) {
+        refreshTimer = setInterval(() => refreshOverview(false), 10000);
+      }
+    }
+    document.getElementById('autoRefreshChk').addEventListener('change', syncAutoRefresh);
+
+    // Heartbeat so --auto-exit closes background node cleanly when user closes window
+    function sendPing() { fetch('/api/ping', { cache: 'no-store' }).catch(() => {}); }
+    sendPing();
+    setInterval(sendPing, 5000);
+
+    refreshOverview(true);
+    syncAutoRefresh();
+  </script>
+</body>
+</html>

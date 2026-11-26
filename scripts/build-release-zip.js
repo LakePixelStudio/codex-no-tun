@@ -28,6 +28,7 @@ const INCLUDE_PATHS = [
   '配置与生成快捷方式.cmd',
   '诊断检查.cmd',
   '排查10053断连.cmd',
+  '控制面板.cmd',
   '一键卸载与还原.cmd',
   'src',
   'scripts',

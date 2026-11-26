@@ -16,8 +16,10 @@ description: 指导新老用户如何一键初始化、生成桌面快捷方式�
 3. **启动 Codex CLI（免 TUN）**：
    - 使用 `codex-notun.cmd` 替代 `codex`（例如 `codex-notun.cmd exec "请仅回复OK"` 或 `codex-notun.cmd --https-only`）。
    - 代理环境变量仅作用于该次子进程，不修改 Windows 全局代理。
-4. **随时调整自动压缩上限**：
-   - 双击工具包中的 `调整自动压缩上限.cmd`，或在对话框让插件执行 `codex-notun-tool.cmd compact-limit <aggressive|balanced|relaxed|restore>`。
-5. **停止使用与无损卸载**：
+4. **打开可视化控制面板（放在 Codex 旁边纯鼠标点击）**：
+   - 双击工具包中的 `控制面板.cmd` 或桌面快捷方式 `Codex 免 TUN 面板.lnk`（也可运行 `codex-notun-tool.cmd panel`），会在本地 `127.0.0.1` 打开一个 440×860 独立小窗，无需打字即可切换三档压缩上限、查看实时状态并运行断连诊断。
+5. **随时调整自动压缩上限**：
+   - 双击工具包中的 `调整自动压缩上限.cmd`，或在面板/对话框执行 `codex-notun-tool.cmd compact-limit <aggressive|balanced|relaxed|restore>`。
+6. **停止使用与无损卸载**：
    - 仅临时不用：退出 Codex 后直接从开始菜单打开原版即可。
    - 彻底还原并卸载：双击 `一键卸载与还原.cmd`（或运行 `codex-notun-tool.cmd uninstall`），会自动还原 `config.toml`、Clash `Merge.yaml`、卸载插件并删除快捷方式。
