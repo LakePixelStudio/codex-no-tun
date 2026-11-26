@@ -1,0 +1,10 @@
+launcher/
+*.lnk
+config.json
+dist/
+node_modules/
+.tmp-*
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db

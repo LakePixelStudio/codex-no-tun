@@ -1,0 +1,41 @@
+{
+  "name": "codex-no-tun",
+  "version": "0.4.0",
+  "description": "Windows Codex 免 TUN 代理诊断、状态检查、10053 断连防护与三档自动压缩上下文插件（不修改 app.asar 与全局代理）",
+  "author": {
+    "name": "Codex No-TUN Contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "proxy",
+    "no-tun",
+    "clash",
+    "mihomo",
+    "windows",
+    "10053",
+    "auto-compact",
+    "diagnostics"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex 免 TUN",
+    "shortDescription": "免 TUN 代理检查、10053 断连诊断与三档自动压缩",
+    "longDescription": "提供四个离线可运行的诊断与优化 Skill：检查 Clash/Mihomo 本地 HTTP/Mixed 代理连通性、查看 Codex Desktop/CLI 代理与 TUN 状态、排查 os error 10053 断连并自选三档自动压缩阈值与 Clash 15s 保活，以及指导安全启停与恢复。",
+    "developerName": "Codex No-TUN Contributors",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg",
+    "logoDark": "./assets/icon-dark.svg",
+    "brandColor": "#0EA5E9",
+    "screenshots": [],
+    "defaultPrompt": [
+      "检查当前 Codex 免 TUN 代理与运行状态",
+      "排查 10053 断连并调整自动压缩上下文档位",
+      "指导我启动、切换代理端口或无损卸载恢复"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "codex-no-tun",
+  "version": "0.4.0",
+  "description": "Windows No-TUN local proxy toolkit, launcher, CLI wrapper, anti-10053 diagnostics, 3-tier auto-compact manager, and Codex plugin for OpenAI Codex Desktop and Codex CLI.",
+  "license": "MIT",
+  "private": false,
+  "bin": {
+    "codex-notun": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node ./src/cli.js check",
+    "status": "node ./src/cli.js status",
+    "setup": "node ./src/cli.js setup",
+    "pack:release": "node ./scripts/build-release-zip.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
